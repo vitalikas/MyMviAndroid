@@ -1,0 +1,12 @@
+package lt.vitalijus.mymviandroid.feature_stock.data.local.model
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity
+data class StockEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val price: Double,
+    val updatedAt: Long
+)
