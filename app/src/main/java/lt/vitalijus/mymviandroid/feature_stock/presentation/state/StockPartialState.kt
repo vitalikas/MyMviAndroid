@@ -8,4 +8,5 @@ sealed interface StockPartialState {
     data class Error(val message: String) : StockPartialState
     data object RefreshStarted : StockPartialState
     data object RefreshCompleted : StockPartialState
+    data class MarketStateChanged(val isOpen: Boolean) : StockPartialState
 }

@@ -7,14 +7,16 @@ import kotlinx.coroutines.SupervisorJob
 import lt.vitalijus.mymviandroid.feature_stock.data.local.db.StockDatabase
 import lt.vitalijus.mymviandroid.feature_stock.data.remote.FakeStockApi
 import lt.vitalijus.mymviandroid.feature_stock.data.remote.StockApi
+import lt.vitalijus.mymviandroid.feature_stock.data.repository.MarketStateRepository
 import lt.vitalijus.mymviandroid.feature_stock.data.repository.OfflineFirstStockRepository
 import lt.vitalijus.mymviandroid.feature_stock.data.repository.RoomFavoritesRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.FavoritesRepository
+import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.StockRepository
-import lt.vitalijus.mymviandroid.feature_stock.domain.usecase.ObserveStocksWithFavoritesUseCase
+import lt.vitalijus.mymviandroid.feature_stock.domain.usecase.ObserveTradableStocksUseCase
+import lt.vitalijus.mymviandroid.feature_stock.presentation.StockViewModel
 import lt.vitalijus.mymviandroid.feature_stock.presentation.mvi.StockEffectHandler
 import lt.vitalijus.mymviandroid.feature_stock.presentation.mvi.StockStore
-import lt.vitalijus.mymviandroid.feature_stock.presentation.StockViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
@@ -24,6 +26,7 @@ val stockModule = module {
     single {
         val seedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         Room.databaseBuilder(get(), StockDatabase::class.java, "stocks.db")
+            .fallbackToDestructiveMigration(false)  // Handle schema changes during development
             .addCallback(StockDatabase.SeedCallback(seedScope))
             .build()
     }
@@ -38,12 +41,14 @@ val stockModule = module {
     // Repositories
     single<StockRepository> { OfflineFirstStockRepository(get(), get()) }
     single<FavoritesRepository> { RoomFavoritesRepository(get()) }
+    single { MarketStateRepository() }
+    single<MarketRepository> { get<MarketStateRepository>() }
 
     // Use Cases
-    factory { ObserveStocksWithFavoritesUseCase(get(), get()) }
+    factory { ObserveTradableStocksUseCase(get(), get(), get()) }
 
     // Presentation
-    factory { StockEffectHandler(get(), get(), get(), get()) }
+    factory { StockEffectHandler(get(), get(), get(), get(), get()) }
     factory { StockStore.Factory(get(), get()) }
     viewModel { StockViewModel(get()) }
 }

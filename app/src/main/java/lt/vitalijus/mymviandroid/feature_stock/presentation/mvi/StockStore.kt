@@ -34,7 +34,7 @@ class StockStore(
                         it.cancel()
                     }
                     logger.d(LogCategory.EFFECT, StockStore::class, "▶️ Starting new ObserveStocks")
-                    observeStocksJob = launchEffect(effect)
+                    observeStocksJob = launchEffect(effect = effect)
                 }
                 else -> {
                     // One-shot effects (fire-and-forget)
@@ -48,7 +48,7 @@ class StockStore(
         return scope.launch {
             effectHandler.handle(effect = effect)
                 .collect { partial ->
-                    logPartialState(partial)
+                    logPartialState(partial = partial)
                     _state.update {
                         reduceStockState(
                             state = it,
@@ -83,6 +83,9 @@ class StockStore(
 
             StockPartialState.RefreshCompleted ->
                 logger.d(LogCategory.PARTIAL_STATE, StockStore::class, "✅ Refresh completed")
+
+            is StockPartialState.MarketStateChanged ->
+                logger.d(LogCategory.PARTIAL_STATE, StockStore::class, "📊 Market state: ${if (partial.isOpen) "OPEN" else "CLOSED"}")
         }
     }
 

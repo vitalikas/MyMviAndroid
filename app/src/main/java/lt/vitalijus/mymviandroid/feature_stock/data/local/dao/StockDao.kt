@@ -14,4 +14,10 @@ interface StockDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(stocks: List<StockEntity>)
+
+    @Query("UPDATE StockEntity SET isDelisted = :isDelisted WHERE id = :stockId")
+    suspend fun updateDelistStatus(stockId: String, isDelisted: Boolean)
+
+    @Query("SELECT * FROM StockEntity WHERE isDelisted = 0 ORDER BY RANDOM() LIMIT 1")
+    suspend fun getRandomActiveStock(): StockEntity?
 }

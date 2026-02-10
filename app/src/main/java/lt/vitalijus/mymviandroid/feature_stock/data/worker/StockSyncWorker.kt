@@ -16,16 +16,24 @@ class StockSyncWorker(
 
     override suspend fun doWork(): Result {
         logger.d(LogCategory.WORKER, StockSyncWorker::class, "🔄 Background refresh started...")
-        
+
         return runCatching {
             repository.refresh()
         }.fold(
             onSuccess = {
-                logger.d(LogCategory.WORKER, StockSyncWorker::class, "✅ Background refresh completed")
+                logger.d(
+                    LogCategory.WORKER,
+                    StockSyncWorker::class,
+                    "✅ Background refresh completed"
+                )
                 Result.success()
             },
             onFailure = { error ->
-                logger.e(LogCategory.WORKER, StockSyncWorker::class, "❌ Background refresh failed: ${error.message}")
+                logger.e(
+                    LogCategory.WORKER,
+                    StockSyncWorker::class,
+                    "❌ Background refresh failed: ${error.message}"
+                )
                 Result.retry()
             }
         )

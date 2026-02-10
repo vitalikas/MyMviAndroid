@@ -8,5 +8,7 @@ data class StockEntity(
     @PrimaryKey val id: String,
     val name: String,
     val price: Double,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val isDelisted: Boolean = false,
+    val dailyChangePercent: Double = 0.0
 )

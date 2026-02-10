@@ -8,12 +8,16 @@ fun StockDto.toEntity(): StockEntity = StockEntity(
     id = id,
     name = name,
     price = price,
-    updatedAt = System.currentTimeMillis()
+    updatedAt = System.currentTimeMillis(),
+    isDelisted = isDelisted,
+    dailyChangePercent = dailyChangePercent
 )
 
 fun StockEntity.toDomain(): Stock = Stock(
     id = id,
     name = name,
     price = price,
-    updatedAt = updatedAt
+    updatedAt = updatedAt,
+    isDelisted = isDelisted,
+    dailyChangePercent = dailyChangePercent
 )

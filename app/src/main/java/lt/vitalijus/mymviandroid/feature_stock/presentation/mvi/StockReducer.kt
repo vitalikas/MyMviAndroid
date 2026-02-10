@@ -37,4 +37,9 @@ fun reduceStockState(
         state.copy(
             isRefreshing = false
         )
+
+    is StockPartialState.MarketStateChanged ->
+        state.copy(
+            isMarketOpen = partial.isOpen
+        )
 }

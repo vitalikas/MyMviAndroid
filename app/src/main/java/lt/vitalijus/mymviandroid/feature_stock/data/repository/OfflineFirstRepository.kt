@@ -22,4 +22,15 @@ class OfflineFirstStockRepository(
         val remoteStocks = api.fetchStocks()
         dao.insertAll(stocks = remoteStocks.map { it.toEntity() })
     }
+
+    override suspend fun delistRandomStock(): Stock? {
+        val stock = dao.getRandomActiveStock()
+        if (stock != null) {
+            dao.updateDelistStatus(
+                stockId = stock.id,
+                isDelisted = true
+            )
+        }
+        return stock?.toDomain()
+    }
 }
