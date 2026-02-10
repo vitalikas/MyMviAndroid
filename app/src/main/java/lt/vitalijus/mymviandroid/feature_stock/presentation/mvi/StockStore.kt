@@ -6,8 +6,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import lt.vitalijus.mymviandroid.core.analytics.LogCategory
-import lt.vitalijus.mymviandroid.core.analytics.Logger
+import lt.vitalijus.mymviandroid.core.log.LogCategory
+import lt.vitalijus.mymviandroid.core.log.Logger
 import lt.vitalijus.mymviandroid.feature_stock.presentation.state.StockPartialState
 import lt.vitalijus.mymviandroid.feature_stock.presentation.state.StockState
 

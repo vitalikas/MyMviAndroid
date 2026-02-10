@@ -31,9 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import lt.vitalijus.mymviandroid.feature_stock.presentation.model.StockUi
 import lt.vitalijus.mymviandroid.feature_stock.presentation.mvi.StockAction
+import lt.vitalijus.mymviandroid.feature_stock.presentation.util.formatPrice
 import org.koin.androidx.compose.koinViewModel
-import java.text.NumberFormat
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,35 +44,75 @@ fun StockScreen() {
         vm.dispatch(StockAction.ScreenEntered)
     }
 
-    PullToRefreshBox(
-        isRefreshing = state.isRefreshing,
-        onRefresh = {
-            vm.dispatch(StockAction.PulledToRefresh)
-        },
-        modifier = Modifier.fillMaxSize()
-    ) {
+    val content: @Composable () -> Unit = {
         when {
-            state.isLoading && state.stocks.isEmpty() -> Box(
+            // Loading state: show spinner while data loads initially
+            state.isLoading -> Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
             }
+
+            // Error state
             state.error != null -> Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 Text("Error: ${state.error}")
             }
+
+            // Empty state: market closed, no favorites
             state.stocks.isEmpty() -> Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No stocks available")
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "🔒 Market is Closed",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "You have no favorites yet.\nAdd favorites when market is open.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
+
+            // Data available: show list with market closed banner if needed
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize()
             ) {
+                // Show market closed banner when market is closed (even with favorites)
+                if (!state.isMarketOpen) {
+                    item {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = "🔒 Market is Closed",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Showing only your favorites. Trading paused until market opens.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+
                 items(state.stocks) { stock ->
                     StockItem(
                         stock = stock,
@@ -83,6 +122,23 @@ fun StockScreen() {
                     )
                 }
             }
+        }
+    }
+
+    // Use PullToRefreshBox only when market is open, otherwise use regular Box
+    if (state.isMarketOpen) {
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = {
+                vm.dispatch(StockAction.PulledToRefresh)
+            },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            content()
+        }
+    } else {
+        Box(modifier = Modifier.fillMaxSize()) {
+            content()
         }
     }
 }
@@ -153,9 +209,4 @@ private fun StockItem(
             }
         }
     }
-}
-
-private fun formatPrice(price: Double): String {
-    val formatter = NumberFormat.getCurrencyInstance(Locale.US)
-    return formatter.format(price)
 }

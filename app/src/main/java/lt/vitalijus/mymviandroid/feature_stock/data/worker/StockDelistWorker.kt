@@ -3,8 +3,8 @@ package lt.vitalijus.mymviandroid.feature_stock.data.worker
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import lt.vitalijus.mymviandroid.core.analytics.LogCategory
-import lt.vitalijus.mymviandroid.core.analytics.Logger
+import lt.vitalijus.mymviandroid.core.log.LogCategory
+import lt.vitalijus.mymviandroid.core.log.Logger
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.StockRepository
 
 class StockDelistWorker(

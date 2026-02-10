@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
-import lt.vitalijus.mymviandroid.core.analytics.Logger
+import lt.vitalijus.mymviandroid.core.log.Logger
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.MarketToggleWorker
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockDelistWorker
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockSyncWorker

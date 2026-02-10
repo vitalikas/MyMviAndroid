@@ -1,4 +1,4 @@
-package lt.vitalijus.mymviandroid.core.analytics
+package lt.vitalijus.mymviandroid.core.log
 
 import android.util.Log
 import kotlin.reflect.KClass

@@ -4,8 +4,8 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.flow.first
-import lt.vitalijus.mymviandroid.core.analytics.LogCategory
-import lt.vitalijus.mymviandroid.core.analytics.Logger
+import lt.vitalijus.mymviandroid.core.log.LogCategory
+import lt.vitalijus.mymviandroid.core.log.Logger
 import lt.vitalijus.mymviandroid.feature_stock.domain.model.MarketState
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
 

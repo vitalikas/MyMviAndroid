@@ -7,39 +7,50 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
 import lt.vitalijus.mymviandroid.core.analytics.AnalyticsTracker
+import lt.vitalijus.mymviandroid.feature_stock.domain.model.MarketState
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.FavoritesRepository
+import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.StockRepository
-import lt.vitalijus.mymviandroid.feature_stock.domain.usecase.ObserveStocksWithFavoritesUseCase
+import lt.vitalijus.mymviandroid.feature_stock.domain.usecase.ObserveTradableStocksUseCase
 import lt.vitalijus.mymviandroid.feature_stock.presentation.model.StockUi
 import lt.vitalijus.mymviandroid.feature_stock.presentation.state.StockPartialState
 
 class StockEffectHandler(
-    private val observeUseCase: ObserveStocksWithFavoritesUseCase,
+    private val observeUseCase: ObserveTradableStocksUseCase,
     private val stockRepository: StockRepository,
     private val favoritesRepository: FavoritesRepository,
+    private val marketRepository: MarketRepository,
     private val analytics: AnalyticsTracker
 ) {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun handle(effect: StockEffect): Flow<StockPartialState> =
         when (effect) {
-            StockEffect.ObserveStocks ->
-                observeUseCase()
-                    .map { (stocks, favorites) ->
-                        stocks.map { stock ->
+            StockEffect.ObserveStocks -> {
+                val stocksFlow = observeUseCase()
+                    .map { tradableList ->
+                        tradableList.map { tradable ->
                             StockUi(
-                                id = stock.id,
-                                name = stock.name,
-                                price = stock.price,
-                                isFavorite = stock.id in favorites
+                                id = tradable.stock.id,
+                                name = tradable.stock.name,
+                                price = tradable.stock.price,
+                                isFavorite = tradable.isFavorite
                             )
                         }
                     }
                     .map<List<StockUi>, StockPartialState> { stocks ->
                         StockPartialState.DataLoaded(stocks = stocks)
                     }
+
+                val marketFlow = marketRepository.observeMarketState()
+                    .map { state ->
+                        StockPartialState.MarketStateChanged(isOpen = state == MarketState.OPEN)
+                    }
+
+                merge(stocksFlow, marketFlow)
                     .onStart { emit(StockPartialState.Loading) }
                     .catch {
                         emit(
@@ -48,6 +59,7 @@ class StockEffectHandler(
                             )
                         )
                     }
+            }
 
             StockEffect.RefreshStocks ->
                 flow {

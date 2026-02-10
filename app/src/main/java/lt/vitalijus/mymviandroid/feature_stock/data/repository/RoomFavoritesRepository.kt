@@ -6,7 +6,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.stateIn
 import lt.vitalijus.mymviandroid.feature_stock.data.local.dao.FavoritesDao
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.FavoritesRepository
 
@@ -14,13 +14,13 @@ class RoomFavoritesRepository(
     private val dao: FavoritesDao
 ) : FavoritesRepository {
 
-    // Cache layer: Hot Flow shared by all collectors
+    // Cache layer: StateFlow shared by all collectors
     private val favoritesCache = dao.observeFavorites()
         .map { it.toSet() }
-        .shareIn(
+        .stateIn(
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
             started = SharingStarted.Lazily,
-            replay = 1
+            initialValue = emptySet()
         )
 
     override fun observeFavorites(): Flow<Set<String>> = favoritesCache
