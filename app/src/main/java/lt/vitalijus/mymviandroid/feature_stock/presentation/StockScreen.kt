@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import lt.vitalijus.mymviandroid.feature_stock.presentation.model.StockUi
 import lt.vitalijus.mymviandroid.feature_stock.presentation.mvi.StockAction
 import lt.vitalijus.mymviandroid.feature_stock.presentation.util.formatPrice
@@ -38,7 +39,8 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun StockScreen() {
     val vm: StockViewModel = koinViewModel()
-    val state by vm.state.collectAsState()
+
+    val state by vm.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         vm.dispatch(StockAction.ScreenEntered)
