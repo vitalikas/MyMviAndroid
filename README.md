@@ -81,7 +81,8 @@ data class StockState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val stocks: List<StockUi> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val isMarketOpen: Boolean = true
 ) // ✅ Impossible to have inconsistent state!
 
 // Explicit user intents
@@ -164,12 +165,15 @@ app/src/main/java/lt/vitalijus/mymviandroid/
 │   │
 │   ├── domain/                     # Business Logic (Clean Architecture)
 │   │   ├── model/
-│   │   │   └── Stock.kt            # Domain models
+│   │   │   ├── Stock.kt            # Domain models
+│   │   │   ├── MarketState.kt      # Market state (OPEN/CLOSED)
+│   │   │   └── TradableStock.kt    # Stock + metadata (favorites, hot)
 │   │   ├── repository/
 │   │   │   ├── StockRepository.kt  # Abstractions
-│   │   │   └── FavoritesRepository.kt
+│   │   │   ├── FavoritesRepository.kt
+│   │   │   └── MarketRepository.kt # Market state management
 │   │   └── usecase/
-│   │       └── ObserveStocksWithFavoritesUseCase.kt
+│   │       └── ObserveTradableStocksUseCase.kt  # Combines stocks + favorites + market
 │   │
 │   ├── data/                       # Data Layer
 │   │   ├── local/
@@ -186,12 +190,15 @@ app/src/main/java/lt/vitalijus/mymviandroid/
 │   │   │   ├── StockDto.kt
 │   │   │   └── FakeStockApi.kt       # Mock API
 │   │   ├── repository/
-│   │   │   ├── OfflineFirstRepository.kt  # Offline-first pattern
-│   │   │   └── RoomFavoritesRepository.kt # With caching!
+│   │   │   ├── OfflineFirstStockRepository.kt  # Offline-first pattern
+│   │   │   ├── RoomFavoritesRepository.kt      # With StateFlow caching!
+│   │   │   └── MarketStateRepository.kt        # In-memory market state
 │   │   ├── mapper/
 │   │   │   └── StockMapper.kt        # Entity ↔ Domain mapping
 │   │   └── worker/
-│   │       └── StockSyncWorker.kt    # Background sync
+│   │       ├── StockSyncWorker.kt    # Background price sync
+│   │       ├── MarketToggleWorker.kt # Market state simulation
+│   │       └── StockDelistWorker.kt  # Stock delisting simulation
 │   │
 │   └── di/
 │       └── StockModule.kt            # Feature DI module
@@ -342,18 +349,26 @@ sealed interface StockEffect {
 
 ```kotlin
 class StockEffectHandler(
-    private val observeUseCase: ObserveStocksWithFavoritesUseCase,
+    private val observeUseCase: ObserveTradableStocksUseCase,
     private val stockRepository: StockRepository,
     private val favoritesRepository: FavoritesRepository,
+    private val marketRepository: MarketRepository,
     private val analytics: AnalyticsTracker
 ) {
     fun handle(effect: StockEffect): Flow<StockPartialState> = 
         when (effect) {
-            StockEffect.ObserveStocks -> 
-                observeUseCase()
-                    .map { ... }
+            StockEffect.ObserveStocks -> {
+                val stocksFlow = observeUseCase()
+                    .map { tradableList -> ... }
+                    .map { StockPartialState.DataLoaded(it) }
+                
+                val marketFlow = marketRepository.observeMarketState()
+                    .map { MarketStateChanged(isOpen = it == MarketState.OPEN) }
+                
+                merge(stocksFlow, marketFlow)  // ← Merges both flows!
                     .onStart { emit(Loading) }
                     .catch { emit(Error(it)) }
+            }
             // ...
         }
 }
@@ -376,6 +391,7 @@ sealed interface StockPartialState {
     data class Error(val message: String) : StockPartialState
     data object RefreshStarted : StockPartialState
     data object RefreshCompleted : StockPartialState
+    data class MarketStateChanged(val isOpen: Boolean) : StockPartialState
 }
 ```
 
@@ -498,27 +514,32 @@ class OfflineFirstStockRepository(
 
 ---
 
-### **2. Flow Caching (SharedFlow)**
+### **2. StateFlow for State Caching**
 
 ```kotlin
 private val favoritesCache = dao.observeFavorites()
     .map { it.toSet() }
-    .shareIn(
+    .stateIn(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         started = SharingStarted.Lazily,
-        replay = 1
+        initialValue = emptySet()
     )
 ```
 
-**Benefits:**
-- ✅ **Single DB connection** (not N connections for N observers)
-- ✅ **Instant replay** for new collectors
-- ✅ **Memory efficient** (shared Set instance)
-- ✅ **3x faster** favorite toggles
+**Why StateFlow over SharedFlow?**
+- ✅ **State semantics** - Favorites are state (current value), not events
+- ✅ **Conflation** - Intermediate DB updates are dropped (only latest matters)
+- ✅ **Always has value** - Guaranteed non-null current state
+- ✅ **Type safety** - `StateFlow<Set<String>>` communicates intent better
 
 **Performance:**
 - Without cache: 15ms per toggle (reads entire DB)
 - With cache: 5ms per toggle (no DB read needed)
+- ✅ **Single DB connection** (not N connections for N observers)
+
+**Rule of Thumb:**
+- Use `stateIn` for **state** (current favorites, market state)
+- Use `shareIn` for **events** (error notifications, analytics events)
 
 ---
 
@@ -607,7 +628,10 @@ class StockViewModel(storeFactory: StockStore.Factory) : ViewModel() {
 ### **Data Layer**
 - **Room** - Local database with reactive queries
 - **Koin** - Dependency injection
-- **WorkManager** - Background sync
+- **WorkManager** - Background sync & market simulation
+  - `StockSyncWorker` - Refreshes stock prices
+  - `MarketToggleWorker` - Simulates market open/close
+  - `StockDelistWorker` - Simulates random stock delisting
 
 ### **Logging & Analytics**
 - Custom **Logger** abstraction (categorized tags)
@@ -643,17 +667,109 @@ cd MyMviAndroid
 ### **Initial Data**
 The app comes with **8 seeded stocks** (AAPL, GOOGL, MSFT, etc.) that load automatically on first launch.
 
+### **Simulation Timeline** (For Testing)
+When you first launch the app, background workers simulate real-world scenarios:
+
+| Time | Event | What Happens |
+|------|-------|--------------|
+| **0s** | App starts | Market is CLOSED, showing empty favorites |
+| **30s** | Market toggle + Sync | Market opens (OPEN), stocks appear, prices update |
+| **60s** | Stock delist | Random stock removed from trading |
+| **Every 15min** | Background sync | Periodic price updates and market toggles |
+
+**Note:** Add some favorites before the 30s mark to see them when market is closed!
+
 ---
 
 ## 📊 Features
 
-- ✅ **Stock List** with real-time prices
-- ✅ **Favorites** - Toggle with heart icon (❤️)
+### **Core Functionality**
+- ✅ **Stock List** with real-time prices (random fluctuations)
+- ✅ **Favorites** - Toggle with heart icon (❤️), persisted to local DB
 - ✅ **Pull-to-Refresh** - Update prices with random changes
-- ✅ **Offline-First** - Works without internet
+- ✅ **Offline-First** - Works without internet, syncs when available
 - ✅ **Background Sync** - WorkManager refreshes data every 15 minutes
 - ✅ **Reactive UI** - Automatic updates when data changes
 - ✅ **Configuration Change Safe** - Survives rotations
+
+### **Market Simulation** 🎲
+- ✅ **Market State Toggle** - Market alternates between OPEN/CLOSED (simulated every 30s)
+- ✅ **Conditional UI** - Pull-to-refresh disabled when market closed
+- ✅ **Smart Filtering** - Shows all stocks when OPEN, only favorites when CLOSED
+- ✅ **Market Banner** - Visual indicator when market is closed
+- ✅ **Stock Delisting** - Random stock delisting simulation (every 60s)
+- ✅ **State-Aware Display** - Delisted stocks automatically filtered out
+
+---
+
+### **6. Dependency Inversion in Workers**
+
+```kotlin
+// ✅ GOOD: Worker depends on abstraction
+class MarketToggleWorker(
+    context: Context,
+    params: WorkerParameters,
+    private val repository: MarketRepository,  // ← Interface
+    private val logger: Logger
+) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val previousState = repository.observeMarketState().first()
+        repository.toggleMarketState()
+        return Result.success()
+    }
+}
+
+// ❌ BAD: Worker depends on implementation
+class MarketToggleWorker(
+    private val repository: MarketStateRepository  // ← Concrete class
+) {
+    // Hard to test, tightly coupled
+}
+```
+
+**Benefits:**
+- ✅ **Testable** - Can inject mock/fake implementations
+- ✅ **Flexible** - Can swap implementations without changing worker
+- ✅ **SOLID** - Follows Dependency Inversion Principle
+- ✅ **Clean** - No casting or type checks needed
+
+**Interface Design:**
+```kotlin
+interface MarketRepository {
+    fun observeMarketState(): Flow<MarketState>
+    suspend fun toggleMarketState()
+}
+
+// Implementation is registered in DI:
+single<MarketRepository> { MarketStateRepository() }
+```
+
+---
+
+### **7. Market State Management**
+
+```kotlin
+class MarketStateRepository : MarketRepository {
+    private val _marketState = MutableStateFlow(MarketState.CLOSED)
+    
+    override fun observeMarketState(): Flow<MarketState> = 
+        _marketState.asStateFlow()
+    
+    override suspend fun toggleMarketState() {
+        _marketState.value = when (_marketState.value) {
+            MarketState.OPEN -> MarketState.CLOSED
+            MarketState.CLOSED -> MarketState.OPEN
+        }
+    }
+}
+```
+
+**Why singleton scope?**
+- ✅ **Shared state** - UI, workers, and use cases see same market state
+- ✅ **Lightweight** - Just a StateFlow, minimal memory overhead
+- ✅ **Consistent** - No risk of state divergence across components
+
+**Pattern:** Stateful repositories use `single { }`, stateless can use `factory { }`
 
 ---
 
@@ -703,11 +819,14 @@ class StockStoreTest {
 
 | Optimization | Impact | Details |
 |--------------|--------|---------|
-| **SharedFlow Cache** | 3x faster | Single DB connection for multiple observers |
+| **StateFlow Cache** | 3x faster | Single DB connection for multiple observers, conflates updates |
 | **Room @Transaction** | 3x faster | Atomic operations, single disk sync |
 | **Job Tracking** | Prevents leaks | Cancels duplicate collectors on rotation |
 | **Compose Keys** | Smart recomposition | Only changed items recompose |
 | **Flow distinctUntilChanged** | Fewer emissions | Prevents redundant UI updates |
+| **Conditional UI** | Better UX | Pull-to-refresh disabled when market closed |
+| **Smart Filtering** | Reduces load | Shows only favorites when market closed |
+| **Dependency Injection** | Fast startup | Repositories cached as singletons where appropriate |
 
 ---
 
@@ -757,6 +876,15 @@ Built to demonstrate:
 
 ## 🔮 Future Enhancements
 
+### **Completed Features** ✅
+- [x] Market state simulation (OPEN/CLOSED)
+- [x] Stock delisting simulation
+- [x] Conditional pull-to-refresh based on market state
+- [x] Market state banner in UI
+- [x] StateFlow optimization for better performance
+- [x] Dependency inversion in Workers
+
+### **Planned Features** 📋
 - [ ] Implement real API integration (currently using FakeStockApi)
 - [ ] Add unit & integration tests
 - [ ] Implement proper error handling UI
@@ -766,6 +894,8 @@ Built to demonstrate:
 - [ ] Migrate to Kotlin Multiplatform (iOS support)
 - [ ] Add Compose Desktop support
 - [ ] Implement offline sync conflict resolution
+- [ ] Add custom WorkManager constraints (battery, network)
+- [ ] Implement stock price alerts/notifications
 
 ---
 
