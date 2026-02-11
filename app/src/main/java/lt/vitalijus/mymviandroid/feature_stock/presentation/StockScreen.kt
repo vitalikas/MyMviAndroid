@@ -1,5 +1,13 @@
 package lt.vitalijus.mymviandroid.feature_stock.presentation
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -23,10 +32,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -182,12 +192,8 @@ private fun StockItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = formatPrice(stock.price),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                // Price with blinking animation on change
+                PriceWithBlinkAnimation(stock = stock)
 
                 IconButton(onClick = onFavoriteClick) {
                     Icon(
@@ -210,5 +216,60 @@ private fun StockItem(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PriceWithBlinkAnimation(stock: StockUi) {
+    // Animation colors
+    val greenColor = Color(0xFF4CAF50)  // Material Green
+    val redColor = Color(0xFFE53935)     // Material Red
+    val defaultBackground = Color.Transparent
+
+    // Determine animation state
+    val isAnimating = stock.isPriceUp != null
+    val targetColor = when (stock.isPriceUp) {
+        true -> greenColor   // 📈 Price UP
+        false -> redColor    // 📉 Price DOWN
+        null -> defaultBackground
+    }
+
+    // Animated background color
+    val animatedBackground by animateColorAsState(
+        targetValue = if (isAnimating) targetColor else defaultBackground,
+        animationSpec = tween(
+            durationMillis = 400,
+            easing = FastOutSlowInEasing
+        ),
+        label = "price_background"
+    )
+
+    // Pulsing alpha animation when blinking
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_alpha"
+    )
+
+    // Apply animation only during the 800ms window
+    val backgroundAlpha = if (isAnimating) pulseAlpha else 0f
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(animatedBackground.copy(alpha = backgroundAlpha))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = formatPrice(stock.price),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }

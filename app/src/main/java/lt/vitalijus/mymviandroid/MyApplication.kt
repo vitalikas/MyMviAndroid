@@ -14,6 +14,7 @@ import lt.vitalijus.mymviandroid.core.di.KoinWorkerFactory
 import lt.vitalijus.mymviandroid.core.di.coreModule
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.MarketToggleWorker
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockDelistWorker
+import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockPriceChangeWorker
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockSyncWorker
 import lt.vitalijus.mymviandroid.feature_stock.di.stockModule
 import org.koin.android.ext.android.inject
@@ -39,6 +40,10 @@ class MyApplication : Application(), Configuration.Provider {
             )
         }
 
+        runWorks()
+    }
+
+    private fun runWorks() {
         // Schedule periodic work (15 minutes - minimum for PeriodicWork)
         WorkManager.getInstance(this).apply {
             val constraints = Constraints.Builder()
@@ -70,30 +75,49 @@ class MyApplication : Application(), Configuration.Provider {
                 marketToggleRequest
             )
 
-            // For testing: schedule one-time workers after 30 seconds (unique to prevent duplicates)
-            // Use REPLACE to ensure only the new delayed work runs
-            val testStockSync = OneTimeWorkRequestBuilder<StockSyncWorker>()
-                .setInitialDelay(30, TimeUnit.SECONDS)
+            // Price change worker - simulates price fluctuations every 15 minutes
+            // 💰 Triggered by WorkManager (background)
+            // 📊 Emits to SharedFlow event bus (many-to-many)
+            // 🎨 UI shows blinking animation (📈 green / 📉 red)
+            val priceChangeRequest =
+                PeriodicWorkRequestBuilder<StockPriceChangeWorker>(15, TimeUnit.MINUTES)
+                    .setInitialDelay(7, TimeUnit.MINUTES)  // Staggered start
+                    .setConstraints(constraints)
+                    .build()
+            enqueueUniquePeriodicWork(
+                "price_change",
+                ExistingPeriodicWorkPolicy.KEEP,
+                priceChangeRequest
+            )
+
+            // For testing: schedule one-time workers with coordinated timing
+            // Sequence: Market OPEN → Price Changes → Delist (all while market is OPEN)
+
+            // Step 1: Open market (after 10s)
+            val testMarketOpen = OneTimeWorkRequestBuilder<MarketToggleWorker>()
+                .setInitialDelay(10, TimeUnit.SECONDS)
                 .setConstraints(constraints)
                 .build()
             enqueueUniqueWork(
-                "test_stock_sync",
+                "test_market_open",
                 ExistingWorkPolicy.REPLACE,
-                testStockSync
+                testMarketOpen
             )
 
-            val testMarketToggle = OneTimeWorkRequestBuilder<MarketToggleWorker>()
-                .setInitialDelay(30, TimeUnit.SECONDS)
+            // Step 2: Price change (after 20s, market should be OPEN)
+            val testPriceChange = OneTimeWorkRequestBuilder<StockPriceChangeWorker>()
+                .setInitialDelay(20, TimeUnit.SECONDS)
                 .setConstraints(constraints)
                 .build()
             enqueueUniqueWork(
-                "test_market_toggle",
+                "test_price_change",
                 ExistingWorkPolicy.REPLACE,
-                testMarketToggle
+                testPriceChange
             )
 
+            // Step 3: Delist stock (after 50s)
             val testStockDelist = OneTimeWorkRequestBuilder<StockDelistWorker>()
-                .setInitialDelay(60, TimeUnit.SECONDS)
+                .setInitialDelay(50, TimeUnit.SECONDS)
                 .setConstraints(constraints)
                 .build()
             enqueueUniqueWork(

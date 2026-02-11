@@ -5,15 +5,20 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import lt.vitalijus.mymviandroid.core.log.Logger
+import lt.vitalijus.mymviandroid.feature_stock.data.local.dao.StockDao
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.MarketToggleWorker
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockDelistWorker
+import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockPriceChangeWorker
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockSyncWorker
+import lt.vitalijus.mymviandroid.feature_stock.domain.event.PriceChangeEventBus
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.StockRepository
 
 class KoinWorkerFactory(
     private val stockRepository: StockRepository,
     private val marketRepository: MarketRepository,
+    private val stockDao: StockDao,
+    private val priceChangeEventBus: PriceChangeEventBus,
     private val logger: Logger
 ) : WorkerFactory() {
 
@@ -46,6 +51,17 @@ class KoinWorkerFactory(
                     context = appContext,
                     params = workerParameters,
                     repository = stockRepository,
+                    logger = logger
+                )
+            }
+
+            StockPriceChangeWorker::class.java.name -> {
+                StockPriceChangeWorker(
+                    context = appContext,
+                    params = workerParameters,
+                    stockDao = stockDao,
+                    priceChangeEventBus = priceChangeEventBus,
+                    marketRepository = marketRepository,
                     logger = logger
                 )
             }

@@ -48,7 +48,17 @@ val stockModule = module {
     factory { ObserveTradableStocksUseCase(get(), get(), get()) }
 
     // Presentation
-    factory { StockEffectHandler(get(), get(), get(), get(), get()) }
+    factory {
+        StockEffectHandler(
+            observeUseCase = get(),
+            stockRepository = get(),
+            favoritesRepository = get(),
+            marketRepository = get(),
+            analytics = get(),
+            priceChangeEventBus = get(),
+            logger = get()
+        )
+    }
     factory { StockStore.Factory(get(), get()) }
     viewModel { StockViewModel(get()) }
 }

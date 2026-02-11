@@ -30,12 +30,17 @@ class StockStore(
                 is StockEffect.ObserveStocks -> {
                     // Cancel previous collector to prevent duplicates
                     observeStocksJob?.let {
-                        logger.d(LogCategory.EFFECT, StockStore::class, "⚠️ Cancelling previous ObserveStocks")
+                        logger.d(
+                            LogCategory.EFFECT,
+                            StockStore::class,
+                            "⚠️ Cancelling previous ObserveStocks"
+                        )
                         it.cancel()
                     }
                     logger.d(LogCategory.EFFECT, StockStore::class, "▶️ Starting new ObserveStocks")
                     observeStocksJob = launchEffect(effect = effect)
                 }
+
                 else -> {
                     // One-shot effects (fire-and-forget)
                     launchEffect(effect)
@@ -85,7 +90,21 @@ class StockStore(
                 logger.d(LogCategory.PARTIAL_STATE, StockStore::class, "✅ Refresh completed")
 
             is StockPartialState.MarketStateChanged ->
-                logger.d(LogCategory.PARTIAL_STATE, StockStore::class, "📊 Market state: ${if (partial.isOpen) "OPEN" else "CLOSED"}")
+                logger.d(
+                    LogCategory.PARTIAL_STATE,
+                    StockStore::class,
+                    "📊 Market state: ${if (partial.isOpen) "OPEN" else "CLOSED"}"
+                )
+
+            is StockPartialState.ClearPriceBlink ->
+                logger.d(LogCategory.PARTIAL_STATE, StockStore::class, "🔴 Price blink cleared")
+
+            is StockPartialState.PriceChanged ->
+                logger.d(
+                    LogCategory.PARTIAL_STATE,
+                    StockStore::class,
+                    "💹 Price changed: ${partial.event.stockId}"
+                )
         }
     }
 
