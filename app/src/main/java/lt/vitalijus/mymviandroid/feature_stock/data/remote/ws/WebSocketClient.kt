@@ -1,4 +1,4 @@
-package lt.vitalijus.mymviandroid.feature_stock.domain.websocket
+package lt.vitalijus.mymviandroid.feature_stock.data.remote.ws
 
 import kotlinx.coroutines.flow.Flow
 

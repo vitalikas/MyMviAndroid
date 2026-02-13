@@ -16,7 +16,7 @@ import lt.vitalijus.mymviandroid.feature_stock.domain.event.StockPriceChangeEven
 import lt.vitalijus.mymviandroid.feature_stock.domain.model.MarketState
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.PriceRepository
-import lt.vitalijus.mymviandroid.feature_stock.domain.websocket.WebSocketClient
+import lt.vitalijus.mymviandroid.feature_stock.data.remote.ws.WebSocketClient
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds

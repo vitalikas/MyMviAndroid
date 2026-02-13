@@ -14,7 +14,7 @@ import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepositor
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.PriceRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.StockRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.usecase.ObserveTradableStocksUseCase
-import lt.vitalijus.mymviandroid.feature_stock.domain.websocket.WebSocketClient
+import lt.vitalijus.mymviandroid.feature_stock.data.remote.ws.WebSocketClient
 import lt.vitalijus.mymviandroid.feature_stock.presentation.StockViewModel
 import lt.vitalijus.mymviandroid.feature_stock.presentation.mvi.StockEffectHandler
 import lt.vitalijus.mymviandroid.feature_stock.presentation.mvi.StockStore

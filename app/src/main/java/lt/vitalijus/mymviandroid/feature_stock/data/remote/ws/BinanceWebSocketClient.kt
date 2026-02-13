@@ -12,8 +12,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import lt.vitalijus.mymviandroid.core.log.LogCategory
 import lt.vitalijus.mymviandroid.core.log.Logger
-import lt.vitalijus.mymviandroid.feature_stock.domain.websocket.PriceUpdate
-import lt.vitalijus.mymviandroid.feature_stock.domain.websocket.WebSocketClient
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
