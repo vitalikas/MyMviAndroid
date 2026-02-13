@@ -14,11 +14,11 @@ import kotlinx.coroutines.launch
 import lt.vitalijus.mymviandroid.core.analytics.AnalyticsTracker
 import lt.vitalijus.mymviandroid.core.log.LogCategory
 import lt.vitalijus.mymviandroid.core.log.Logger
-import lt.vitalijus.mymviandroid.feature_stock.data.repository.BinancePriceRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.event.PriceChangeEventBus
 import lt.vitalijus.mymviandroid.feature_stock.domain.model.MarketState
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.FavoritesRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
+import lt.vitalijus.mymviandroid.feature_stock.domain.repository.PriceRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.StockRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.usecase.ObserveTradableStocksUseCase
 import lt.vitalijus.mymviandroid.feature_stock.presentation.model.StockUi
@@ -29,7 +29,7 @@ class StockEffectHandler(
     private val stockRepository: StockRepository,
     private val favoritesRepository: FavoritesRepository,
     private val marketRepository: MarketRepository,
-    private val binancePriceRepository: BinancePriceRepository,
+    private val priceRepository: PriceRepository,
     private val analytics: AnalyticsTracker,
     private val priceChangeEventBus: PriceChangeEventBus,
     private val logger: Logger
@@ -43,13 +43,13 @@ class StockEffectHandler(
             StockEffect.RefreshStocks -> refreshStocksFlow()
 
             StockEffect.ConnectWebSocket -> {
-                binancePriceRepository.start()
+                priceRepository.start()
                 logger.d(LogCategory.WORKER, StockEffectHandler::class, "▶️ WebSocket connected")
                 emptyFlow()
             }
 
             StockEffect.DisconnectWebSocket -> {
-                binancePriceRepository.stop()
+                priceRepository.stop()
                 logger.d(LogCategory.WORKER, StockEffectHandler::class, "⏹️ WebSocket disconnected")
                 emptyFlow()
             }

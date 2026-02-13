@@ -6,20 +6,14 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import lt.vitalijus.mymviandroid.core.log.LogCategory
 import lt.vitalijus.mymviandroid.core.log.Logger
-import lt.vitalijus.mymviandroid.feature_stock.data.local.db.dao.StockDao
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.MarketToggleWorker
-import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockDelistWorker
-import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockPriceChangeWorker
-import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockSyncWorker
-import lt.vitalijus.mymviandroid.feature_stock.domain.event.PriceChangeEventBus
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
-import lt.vitalijus.mymviandroid.feature_stock.domain.repository.StockRepository
 
+/**
+ * Koin-powered WorkerFactory for creating WorkManager workers with dependency injection.
+ */
 class KoinWorkerFactory(
-    private val stockRepository: StockRepository,
     private val marketRepository: MarketRepository,
-    private val stockDao: StockDao,
-    private val priceChangeEventBus: PriceChangeEventBus,
     private val logger: Logger
 ) : WorkerFactory() {
 
@@ -34,41 +28,11 @@ class KoinWorkerFactory(
             "🔧 Creating worker: $workerClassName"
         )
         return when (workerClassName) {
-            StockSyncWorker::class.java.name -> {
-                StockSyncWorker(
-                    context = appContext,
-                    params = workerParameters,
-                    stockRepository = stockRepository,
-                    marketRepository = marketRepository,
-                    logger = logger
-                )
-            }
-
             MarketToggleWorker::class.java.name -> {
                 MarketToggleWorker(
                     context = appContext,
                     params = workerParameters,
                     repository = marketRepository,
-                    logger = logger
-                )
-            }
-
-            StockDelistWorker::class.java.name -> {
-                StockDelistWorker(
-                    context = appContext,
-                    params = workerParameters,
-                    repository = stockRepository,
-                    logger = logger
-                )
-            }
-
-            StockPriceChangeWorker::class.java.name -> {
-                StockPriceChangeWorker(
-                    context = appContext,
-                    params = workerParameters,
-                    stockDao = stockDao,
-                    priceChangeEventBus = priceChangeEventBus,
-                    marketRepository = marketRepository,
                     logger = logger
                 )
             }

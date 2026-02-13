@@ -28,10 +28,7 @@ val coreModule = module {
 
     single {
         KoinWorkerFactory(
-            stockRepository = get(),
             marketRepository = get(),
-            stockDao = get(),
-            priceChangeEventBus = get(),
             logger = get()
         )
     }

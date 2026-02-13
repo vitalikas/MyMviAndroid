@@ -1,14 +1,29 @@
 package lt.vitalijus.mymviandroid.feature_stock.domain.websocket
 
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Price update from WebSocket stream.
+ */
+data class PriceUpdate(
+    val symbol: String,
+    val price: Double,
+    val percentChange: Double
+)
+
 /**
  * Abstraction for WebSocket price streaming clients.
  *
- * Enables:
- * - Multiple exchange implementations (Binance, Coinbase, Kraken)
- * - Easy testing with fake implementations
- * - Swap implementations without changing repository code
+ * Uses Flow-based API instead of callbacks - no circular dependencies,
+ * easier to test, follows Kotlin coroutines best practices.
  */
 interface WebSocketClient {
+
+    /**
+     * Hot Flow of price updates from the WebSocket stream.
+     * Collectors receive real-time price updates.
+     */
+    val priceUpdates: Flow<PriceUpdate>
 
     /**
      * Connects to the WebSocket stream.
@@ -24,15 +39,4 @@ interface WebSocketClient {
      * Checks if currently connected.
      */
     fun isConnected(): Boolean
-}
-
-/**
- * Callback for price updates from WebSocket.
- */
-fun interface PriceUpdateListener {
-    fun onPriceUpdate(
-        symbol: String,
-        price: Double,
-        percentChange: Double
-    )
 }

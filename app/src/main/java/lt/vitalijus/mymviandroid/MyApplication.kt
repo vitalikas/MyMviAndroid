@@ -12,10 +12,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import lt.vitalijus.mymviandroid.core.di.KoinWorkerFactory
 import lt.vitalijus.mymviandroid.core.di.coreModule
-import lt.vitalijus.mymviandroid.feature_stock.data.repository.BinancePriceRepository
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.MarketToggleWorker
-import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockDelistWorker
 import lt.vitalijus.mymviandroid.feature_stock.di.stockModule
+import lt.vitalijus.mymviandroid.feature_stock.domain.repository.PriceRepository
 import org.koin.android.ext.android.inject
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
@@ -26,7 +25,7 @@ import java.util.concurrent.TimeUnit
 class MyApplication : Application(), Configuration.Provider {
 
     private val workerFactory: KoinWorkerFactory by inject()
-    private val binancePriceRepository: BinancePriceRepository by inject()
+    private val priceRepository: PriceRepository by inject()
 
     override fun onCreate() {
         super.onCreate()
@@ -46,7 +45,7 @@ class MyApplication : Application(), Configuration.Provider {
     }
 
     private fun startWebSocket() {
-        binancePriceRepository.start()
+        priceRepository.start()
     }
 
     private fun runWorks() {

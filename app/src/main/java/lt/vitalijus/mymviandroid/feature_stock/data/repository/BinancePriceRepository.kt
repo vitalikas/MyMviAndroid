@@ -2,13 +2,11 @@ package lt.vitalijus.mymviandroid.feature_stock.data.repository
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 import lt.vitalijus.mymviandroid.core.log.LogCategory
 import lt.vitalijus.mymviandroid.core.log.Logger
@@ -17,204 +15,187 @@ import lt.vitalijus.mymviandroid.feature_stock.domain.event.PriceChangeEventBus
 import lt.vitalijus.mymviandroid.feature_stock.domain.event.StockPriceChangeEvent
 import lt.vitalijus.mymviandroid.feature_stock.domain.model.MarketState
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
-import lt.vitalijus.mymviandroid.feature_stock.domain.websocket.PriceUpdateListener
+import lt.vitalijus.mymviandroid.feature_stock.domain.repository.PriceRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.websocket.WebSocketClient
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * Repository that connects WebSocket price stream to our event bus AND updates DB.
+ * Repository that connects WebSocket price stream to event bus and DB.
  *
- * 🔄 Live price streaming with batching to reduce DB writes and UI updates
- * 📡 Emits price changes every 500ms (not per-message) to prevent overwhelming the UI
+ * 🔄 Batches price updates every 2 seconds to reduce DB writes
+ * 📡 Emits events to [PriceChangeEventBus] for UI animations
  * 💾 Updates DB with batched prices
  * 🎯 Only active when market is OPEN
  */
-@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class BinancePriceRepository(
-    private val webSocketClientFactory: (PriceUpdateListener) -> WebSocketClient,
+    private val webSocketClient: WebSocketClient,
     private val stockDao: StockDao,
     private val priceChangeEventBus: PriceChangeEventBus,
     private val marketRepository: MarketRepository,
     private val logger: Logger
-) : PriceUpdateListener {
-
+) : PriceRepository {
     private val scope = CoroutineScope(Dispatchers.IO)
-
-    // Lazy WebSocket initialization - created when first needed
-    private val webSocketClient: WebSocketClient by lazy { webSocketClientFactory(this) }
 
     // Track last known prices for change detection
     private val lastPrices = ConcurrentHashMap<String, Double>()
 
-    // Track current market state
-    private val isMarketOpen = AtomicBoolean(false)
-
-    // Buffer for pending price updates (before batching)
+    // Batched updates buffer: symbol -> newPrice
     private val pendingUpdates = ConcurrentHashMap<String, Double>()
 
-    // Flow to trigger batch processing (conflated - drops signals if collector is slow)
-    private val _updateSignal = MutableSharedFlow<Unit>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    private val updateSignal = _updateSignal.asSharedFlow()
+    // Coroutine jobs for cleanup
+    private var collectionJob: Job? = null
+    private var batchingJob: Job? = null
 
     private var isStarted = false
 
     /**
-     * Starts the WebSocket connection and batch processing.
+     * Starts price streaming when market is open.
+     * Monitors market state and manages WebSocket lifecycle.
      */
-    fun start() {
+    override fun start() {
         if (isStarted) return
         isStarted = true
 
-        // Start batch processing coroutine
-        scope.launch {
-            processBatchedUpdates()
-        }
-
-        scope.launch {
+        collectionJob = scope.launch {
             marketRepository.observeMarketState().collect { state ->
                 when (state) {
-                    MarketState.OPEN -> {
-                        logger.d(
-                            LogCategory.WORKER,
-                            BinancePriceRepository::class,
-                            "🔓 Market OPEN - loading prices from DB, connecting WebSocket..."
-                        )
-                        isMarketOpen.set(true)
-                        // Load current prices from DB for change detection baseline
-                        scope.launch {
-                            stockDao.observeStocks().first().forEach { stock ->
-                                lastPrices[stock.id] = stock.price
-                            }
-                            logger.d(
-                                LogCategory.WORKER,
-                                BinancePriceRepository::class,
-                                "📊 Loaded ${lastPrices.size} prices from DB"
-                            )
-                        }
-                        webSocketClient.connect()
-                    }
-
-                    MarketState.CLOSED -> {
-                        logger.d(
-                            LogCategory.WORKER,
-                            BinancePriceRepository::class,
-                            "🔒 Market CLOSED - disconnecting WebSocket..."
-                        )
-                        isMarketOpen.set(false)
-                        webSocketClient.disconnect()
-                        lastPrices.clear()
-                        pendingUpdates.clear()
-                    }
+                    MarketState.OPEN -> openStream()
+                    MarketState.CLOSED -> closeStream()
                 }
             }
         }
     }
 
     /**
-     * Stops the WebSocket connection.
+     * Stops all price streaming and cleans up resources.
      */
-    fun stop() {
+    override fun stop() {
         isStarted = false
-        isMarketOpen.set(false)
+        closeStream()
+        collectionJob?.cancel()
+        collectionJob = null
+        scope.cancel()
+    }
+
+    private suspend fun openStream() {
+        logger.d(
+            LogCategory.WORKER,
+            BinancePriceRepository::class,
+            "🔓 Market OPEN - connecting WebSocket, starting batch processing"
+        )
+
+        // Load baseline prices from DB
+        stockDao.observeStocks().first().forEach { stock ->
+            lastPrices[stock.id] = stock.price
+        }
+        logger.d(
+            LogCategory.WORKER,
+            BinancePriceRepository::class,
+            "📊 Loaded ${lastPrices.size} baseline prices from DB"
+        )
+
+        // Connect WebSocket
+        webSocketClient.connect()
+
+        // Start batching coroutine
+        batchingJob?.cancel()
+        batchingJob = scope.launch {
+            runBatchingLoop()
+        }
+
+        // Collect price updates from WebSocket Flow
+        scope.launch {
+            webSocketClient.priceUpdates
+                .filter { it.symbol in lastPrices.keys } // Only tracked symbols
+                .collect { update ->
+                    val lastPrice = lastPrices[update.symbol]
+                    if (lastPrice != null && lastPrice != update.price) {
+                        // Buffer the update
+                        pendingUpdates[update.symbol] = update.price
+                    }
+                }
+        }
+    }
+
+    private fun closeStream() {
+        logger.d(
+            LogCategory.WORKER,
+            BinancePriceRepository::class,
+            "🔒 Market CLOSED - disconnecting WebSocket"
+        )
+
         webSocketClient.disconnect()
+        batchingJob?.cancel()
+        batchingJob = null
         lastPrices.clear()
         pendingUpdates.clear()
     }
 
     /**
-     * Processes batched updates every 500ms.
-     * This prevents overwhelming the DB and UI with too many individual updates.
+     * Batching loop - processes updates every 2 seconds.
      */
-    private suspend fun processBatchedUpdates() {
-        updateSignal
-            .sample(2000.milliseconds) // Process at most once every 2 seconds
-            .collect {
-                if (!isMarketOpen.get()) return@collect
+    private suspend fun runBatchingLoop() {
+        while (true) {
+            delay(2000.milliseconds)
 
-                // Get all pending updates and clear buffer
-                val updates = pendingUpdates.toMap()
-                pendingUpdates.clear()
+            if (pendingUpdates.isEmpty()) continue
 
-                if (updates.isEmpty()) return@collect
+            // Atomically swap buffers
+            val batch = pendingUpdates.toMap()
+            pendingUpdates.clear()
 
-                // Process batch
-                val events = mutableListOf<StockPriceChangeEvent>()
+            // Process batch
+            val events = mutableListOf<StockPriceChangeEvent>()
 
-                updates.forEach { (symbol, newPrice) ->
-                    val oldPrice = lastPrices[symbol]
+            batch.forEach { (symbol, newPrice) ->
+                val oldPrice = lastPrices[symbol] ?: return@forEach
+                if (oldPrice == newPrice) return@forEach
 
-                    if (oldPrice != null && oldPrice != newPrice) {
-                        // Update DB
-                        stockDao.updateStockPrice(symbol, newPrice)
+                // Update DB
+                stockDao.updateStockPrice(
+                    stockId = symbol,
+                    price = newPrice
+                )
 
-                        // Create event
-                        val event = StockPriceChangeEvent(
-                            stockId = symbol,
-                            oldPrice = oldPrice,
-                            newPrice = newPrice
-                        )
-                        events.add(event)
+                // Create event
+                val event = StockPriceChangeEvent(
+                    stockId = symbol,
+                    oldPrice = oldPrice,
+                    newPrice = newPrice
+                )
+                events.add(event)
 
-                        // Update cache
-                        lastPrices[symbol] = newPrice
+                // Update cache
+                lastPrices[symbol] = newPrice
 
-                        // Log significant changes only
-                        val changePercent = ((newPrice - oldPrice) / oldPrice) * 100
-                        if (abs(changePercent) > 0.5) {
-                            val direction = when {
-                                event.isPriceUp -> "📈"
-                                event.isPriceDown -> "📉"
-                                else -> "➡️"
-                            }
-                            logger.d(
-                                LogCategory.WORKER,
-                                BinancePriceRepository::class,
-                                "$direction $symbol: $$oldPrice → $$newPrice (${changePercent.toInt()}%)"
-                            )
-                        }
+                // Log significant changes
+                val changePercent = ((newPrice - oldPrice) / oldPrice) * 100
+                if (abs(changePercent) > 0.5) {
+                    val direction = when {
+                        event.isPriceUp -> "📈"
+                        event.isPriceDown -> "📉"
+                        else -> "➡️"
                     }
-                }
-
-                // Emit all events as a batch (UI can handle multiple at once)
-                events.forEach { event ->
-                    priceChangeEventBus.emit(event)
-                }
-
-                if (events.isNotEmpty()) {
                     logger.d(
                         LogCategory.WORKER,
                         BinancePriceRepository::class,
-                        "📦 Processed batch of ${events.size} price updates"
+                        "$direction $symbol: $$oldPrice → $$newPrice (${changePercent.toInt()}%)"
                     )
                 }
             }
-    }
 
-    /**
-     * Called by WebSocket client on price updates.
-     * Just adds to pending buffer - actual processing happens every 500ms.
-     */
-    override fun onPriceUpdate(
-        symbol: String,
-        price: Double,
-        @Suppress("UNUSED_PARAMETER") percentChange: Double
-    ) {
-        if (!isMarketOpen.get()) return
+            // Emit events to UI
+            events.forEach { priceChangeEventBus.emit(it) }
 
-        // Skip if price hasn't changed from last known
-        val lastPrice = lastPrices[symbol]
-        if (lastPrice != null && lastPrice == price) return
-
-        // Add to pending updates buffer
-        pendingUpdates[symbol] = price
-
-        // Signal that we have updates (conflated - multiple signals = one processing)
-        _updateSignal.tryEmit(Unit)
+            if (events.isNotEmpty()) {
+                logger.d(
+                    LogCategory.WORKER,
+                    BinancePriceRepository::class,
+                    "📦 Processed batch of ${events.size} price updates"
+                )
+            }
+        }
     }
 }
