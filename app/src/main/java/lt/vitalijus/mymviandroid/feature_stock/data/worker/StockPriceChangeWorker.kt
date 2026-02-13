@@ -6,8 +6,8 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.flow.first
 import lt.vitalijus.mymviandroid.core.log.LogCategory
 import lt.vitalijus.mymviandroid.core.log.Logger
-import lt.vitalijus.mymviandroid.feature_stock.data.local.dao.StockDao
-import lt.vitalijus.mymviandroid.feature_stock.data.local.model.StockEntity
+import lt.vitalijus.mymviandroid.feature_stock.data.local.db.dao.StockDao
+import lt.vitalijus.mymviandroid.feature_stock.data.local.db.model.StockEntity
 import lt.vitalijus.mymviandroid.feature_stock.domain.event.PriceChangeEventBus
 import lt.vitalijus.mymviandroid.feature_stock.domain.event.StockPriceChangeEvent
 import lt.vitalijus.mymviandroid.feature_stock.domain.model.MarketState
@@ -67,7 +67,7 @@ class StockPriceChangeWorker(
             }
 
             // Save updated prices to database
-            stockDao.insertAll(stocks = updatedStocks)
+            stockDao.insertAllStocks(stocks = updatedStocks)
 
             // Emit price change events to SharedFlow event bus
             emitPriceChangeEvents(

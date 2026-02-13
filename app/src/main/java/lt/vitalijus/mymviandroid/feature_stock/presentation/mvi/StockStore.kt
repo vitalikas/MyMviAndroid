@@ -95,16 +95,6 @@ class StockStore(
                     StockStore::class,
                     "📊 Market state: ${if (partial.isOpen) "OPEN" else "CLOSED"}"
                 )
-
-            is StockPartialState.ClearPriceBlink ->
-                logger.d(LogCategory.PARTIAL_STATE, StockStore::class, "🔴 Price blink cleared")
-
-            is StockPartialState.PriceChanged ->
-                logger.d(
-                    LogCategory.PARTIAL_STATE,
-                    StockStore::class,
-                    "💹 Price changed: ${partial.event.stockId}"
-                )
         }
     }
 

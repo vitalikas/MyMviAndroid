@@ -1,15 +1,14 @@
 package lt.vitalijus.mymviandroid.feature_stock.di
 
 import androidx.room.Room
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import lt.vitalijus.mymviandroid.feature_stock.data.local.db.StockDatabase
-import lt.vitalijus.mymviandroid.feature_stock.data.remote.FakeStockApi
-import lt.vitalijus.mymviandroid.feature_stock.data.remote.StockApi
+import lt.vitalijus.mymviandroid.feature_stock.data.remote.api.BinanceRestApi
+import lt.vitalijus.mymviandroid.feature_stock.data.remote.api.StockApi
+import lt.vitalijus.mymviandroid.feature_stock.data.repository.BinancePriceRepository
 import lt.vitalijus.mymviandroid.feature_stock.data.repository.MarketStateRepository
 import lt.vitalijus.mymviandroid.feature_stock.data.repository.OfflineFirstStockRepository
 import lt.vitalijus.mymviandroid.feature_stock.data.repository.RoomFavoritesRepository
+import lt.vitalijus.mymviandroid.feature_stock.data.remote.ws.BinanceWebSocketClient
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.FavoritesRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.MarketRepository
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.StockRepository
@@ -22,12 +21,9 @@ import org.koin.dsl.module
 
 val stockModule = module {
 
-    // Database
     single {
-        val seedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         Room.databaseBuilder(get(), StockDatabase::class.java, "stocks.db")
-            .fallbackToDestructiveMigration(false)  // Handle schema changes during development
-            .addCallback(StockDatabase.SeedCallback(seedScope))
+            .fallbackToDestructiveMigration(true)  // Clear data on schema change (dev only)
             .build()
     }
 
@@ -35,14 +31,31 @@ val stockModule = module {
     single { get<StockDatabase>().stockDao() }
     single { get<StockDatabase>().favoritesDao() }
 
-    // API
-    single<StockApi> { FakeStockApi() }
+    // API - Binance REST API for initial stock list
+    single<StockApi> { BinanceRestApi(client = get(), logger = get()) }
 
     // Repositories
     single<StockRepository> { OfflineFirstStockRepository(get(), get()) }
     single<FavoritesRepository> { RoomFavoritesRepository(get()) }
     single { MarketStateRepository() }
     single<MarketRepository> { get<MarketStateRepository>() }
+
+    // Binance WebSocket price streaming with lazy WebSocket initialization
+    single {
+        BinancePriceRepository(
+            webSocketClientFactory = { listener ->
+                BinanceWebSocketClient(
+                    client = get(),
+                    logger = get(),
+                    listener = listener
+                )
+            },
+            stockDao = get(),
+            priceChangeEventBus = get(),
+            marketRepository = get(),
+            logger = get()
+        )
+    }
 
     // Use Cases
     factory { ObserveTradableStocksUseCase(get(), get(), get()) }
@@ -54,6 +67,7 @@ val stockModule = module {
             stockRepository = get(),
             favoritesRepository = get(),
             marketRepository = get(),
+            binancePriceRepository = get(),
             analytics = get(),
             priceChangeEventBus = get(),
             logger = get()

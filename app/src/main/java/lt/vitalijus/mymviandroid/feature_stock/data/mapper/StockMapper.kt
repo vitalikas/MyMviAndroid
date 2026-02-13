@@ -1,6 +1,6 @@
 package lt.vitalijus.mymviandroid.feature_stock.data.mapper
 
-import lt.vitalijus.mymviandroid.feature_stock.data.local.model.StockEntity
+import lt.vitalijus.mymviandroid.feature_stock.data.local.db.model.StockEntity
 import lt.vitalijus.mymviandroid.feature_stock.data.remote.StockDto
 import lt.vitalijus.mymviandroid.feature_stock.domain.model.Stock
 

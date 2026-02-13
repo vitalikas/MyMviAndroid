@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import lt.vitalijus.mymviandroid.feature_stock.data.local.dao.FavoritesDao
+import lt.vitalijus.mymviandroid.feature_stock.data.local.db.dao.FavoritesDao
 import lt.vitalijus.mymviandroid.feature_stock.domain.repository.FavoritesRepository
 
 class RoomFavoritesRepository(

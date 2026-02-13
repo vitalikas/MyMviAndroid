@@ -1,0 +1,203 @@
+package lt.vitalijus.mymviandroid.feature_stock.data.remote.ws
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import lt.vitalijus.mymviandroid.core.log.LogCategory
+import lt.vitalijus.mymviandroid.core.log.Logger
+import lt.vitalijus.mymviandroid.feature_stock.domain.websocket.PriceUpdateListener
+import lt.vitalijus.mymviandroid.feature_stock.domain.websocket.WebSocketClient
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.json.JSONArray
+
+/**
+ * Binance free WebSocket API client implementation.
+ *
+ * WebSocket endpoint: wss://stream.binance.com:9443/ws/!ticker@arr
+ * - Streams ALL symbols 24hr ticker data
+ * - Free, no API key required
+ * - Updates every ~1 second
+ *
+ * Implements [lt.vitalijus.mymviandroid.feature_stock.domain.websocket.WebSocketClient] abstraction for easy swapping/testing.
+ */
+class BinanceWebSocketClient(
+    private val client: OkHttpClient,
+    private val logger: Logger,
+    private val listener: PriceUpdateListener
+) : WebSocketClient {
+    companion object {
+        const val BINANCE_WS_URL = "wss://stream.binance.com:9443/ws/!ticker@arr"
+        const val RECONNECT_DELAY_MS = 5000L
+        const val NORMAL_CLOSURE_STATUS = 1000
+    }
+
+    private var webSocket: WebSocket? = null
+    private var isConnected = false
+    private var reconnectJob: Job? = null
+
+    private val scope = CoroutineScope(Dispatchers.IO + Job())
+
+    /**
+     * Connects to Binance WebSocket stream.
+     */
+    override fun connect() {
+        if (isConnected) {
+            logger.d(LogCategory.WORKER, BinanceWebSocketClient::class, "Already connected")
+            return
+        }
+
+        val request = Request.Builder()
+            .url(BINANCE_WS_URL)
+            .build()
+
+        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                isConnected = true
+                logger.d(
+                    LogCategory.WORKER,
+                    BinanceWebSocketClient::class,
+                    "🔗 Connected to Binance WebSocket"
+                )
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                parseTickerMessage(text)
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                logger.d(
+                    LogCategory.WORKER,
+                    BinanceWebSocketClient::class,
+                    "⚠️ WebSocket closing: $code - $reason"
+                )
+                webSocket.close(NORMAL_CLOSURE_STATUS, null)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                isConnected = false
+                logger.d(
+                    LogCategory.WORKER,
+                    BinanceWebSocketClient::class,
+                    "🔌 WebSocket closed: $code - $reason"
+                )
+                scheduleReconnect()
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                isConnected = false
+                logger.e(
+                    LogCategory.WORKER,
+                    BinanceWebSocketClient::class,
+                    "❌ WebSocket error: ${t.message}"
+                )
+                scheduleReconnect()
+            }
+        })
+    }
+
+    /**
+     * Disconnects from WebSocket.
+     */
+    override fun disconnect() {
+        reconnectJob?.cancel()
+        webSocket?.close(NORMAL_CLOSURE_STATUS, "User disconnected")
+        webSocket = null
+        isConnected = false
+        logger.d(LogCategory.WORKER, BinanceWebSocketClient::class, "👋 Disconnected")
+    }
+
+    /**
+     * Checks if currently connected.
+     */
+    override fun isConnected(): Boolean = isConnected
+
+    private fun scheduleReconnect() {
+        if (reconnectJob?.isActive == true) return
+
+        reconnectJob = scope.launch {
+            delay(RECONNECT_DELAY_MS)
+            if (isActive) {
+                logger.d(
+                    LogCategory.WORKER,
+                    BinanceWebSocketClient::class,
+                    "🔄 Attempting to reconnect..."
+                )
+                connect()
+            }
+        }
+    }
+
+    private fun parseTickerMessage(jsonString: String) {
+        try {
+            // Parse JSON array of ticker data
+            val tickerArray = JSONArray(jsonString)
+
+            for (i in 0 until tickerArray.length()) {
+                val ticker = tickerArray.getJSONObject(i)
+                val symbol = ticker.getString("s")
+                val lastPrice = ticker.getString("c").toDoubleOrNull() ?: continue
+                val priceChangePercent = ticker.getString("p").toDoubleOrNull() ?: 0.0
+
+                // Map Binance symbols to our stock format
+                // e.g., "BTCUSDT" -> "BTC" (or keep full)
+                val stockSymbol = mapBinanceSymbol(symbol)
+
+                if (stockSymbol != null) {
+                    listener.onPriceUpdate(stockSymbol, lastPrice, priceChangePercent)
+                }
+            }
+        } catch (e: Exception) {
+            logger.e(
+                LogCategory.WORKER,
+                BinanceWebSocketClient::class,
+                "Failed to parse message: ${e.message}"
+            )
+        }
+    }
+
+    /**
+     * Maps Binance symbol to our stock symbol format.
+     * e.g., "BTCUSDT" -> "BTC", "ETHUSDT" -> "ETH"
+     */
+    private fun mapBinanceSymbol(binSymbol: String): String? {
+        // Remove USDT, BUSD, USDC suffixes to get base asset
+        val baseAsset = when {
+            binSymbol.endsWith("USDT") -> binSymbol.removeSuffix("USDT")
+            binSymbol.endsWith("BUSD") -> binSymbol.removeSuffix("BUSD")
+            binSymbol.endsWith("USDC") -> binSymbol.removeSuffix("USDC")
+            else -> binSymbol
+        }
+
+        // Map to our stock symbols (we use crypto as "stocks" for demo)
+        return when (baseAsset) {
+            "BTC" -> "BTC"
+            "ETH" -> "ETH"
+            "BNB" -> "BNB"
+            "SOL" -> "SOL"
+            "ADA" -> "ADA"
+            "DOT" -> "DOT"
+            "MATIC" -> "MATIC"
+            "AVAX" -> "AVAX"
+            "LINK" -> "LINK"
+            "UNI" -> "UNI"
+            "ATOM" -> "ATOM"
+            "ETC" -> "ETC"
+            "XLM" -> "XLM"
+            "ALGO" -> "ALGO"
+            "NEAR" -> "NEAR"
+            "FIL" -> "FIL"
+            "APE" -> "APE"
+            "SAND" -> "SAND"
+            "MANA" -> "MANA"
+            "AXS" -> "AXS"
+            else -> null // Skip symbols we don't track
+        }
+    }
+}

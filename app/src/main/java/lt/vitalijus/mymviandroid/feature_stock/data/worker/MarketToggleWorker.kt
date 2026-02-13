@@ -17,6 +17,12 @@ class MarketToggleWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        logger.d(
+            LogCategory.WORKER,
+            MarketToggleWorker::class,
+            "▶️ MarketToggleWorker STARTED - id: ${inputData.getString("worker_id") ?: "unknown"}"
+        )
+
         // Get current state before toggle
         val previousState = repository.observeMarketState().first()
 
@@ -24,14 +30,15 @@ class MarketToggleWorker(
         repository.toggleMarketState()
 
         val transitionText = when (previousState) {
-            MarketState.OPEN -> "📉 OPEN → CLOSED 🚫 (Trading stopped)"
-            MarketState.CLOSED -> "📈 CLOSED → OPEN ✅ (Trading resumed)"
+            MarketState.OPEN -> "📉 OPEN → CLOSED 🚫"
+            MarketState.CLOSED -> "📈 CLOSED → OPEN ✅"
         }
+        val newState = repository.observeMarketState().first()
 
         logger.d(
             LogCategory.WORKER,
             MarketToggleWorker::class,
-            "🔄 Market state toggled: $transitionText"
+            "🔄 Market toggled: $transitionText | Now: $newState"
         )
 
         return Result.success()

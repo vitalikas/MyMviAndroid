@@ -5,4 +5,6 @@ sealed interface StockEffect {
     data object RefreshStocks : StockEffect
     data class ToggleFavorite(val id: String) : StockEffect
     data class TrackAnalytics(val event: String) : StockEffect
+    data object ConnectWebSocket : StockEffect
+    data object DisconnectWebSocket : StockEffect
 }

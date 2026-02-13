@@ -4,8 +4,9 @@ import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
+import lt.vitalijus.mymviandroid.core.log.LogCategory
 import lt.vitalijus.mymviandroid.core.log.Logger
-import lt.vitalijus.mymviandroid.feature_stock.data.local.dao.StockDao
+import lt.vitalijus.mymviandroid.feature_stock.data.local.db.dao.StockDao
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.MarketToggleWorker
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockDelistWorker
 import lt.vitalijus.mymviandroid.feature_stock.data.worker.StockPriceChangeWorker
@@ -27,12 +28,18 @@ class KoinWorkerFactory(
         workerClassName: String,
         workerParameters: WorkerParameters
     ): ListenableWorker? {
+        logger.d(
+            LogCategory.WORKER,
+            KoinWorkerFactory::class,
+            "🔧 Creating worker: $workerClassName"
+        )
         return when (workerClassName) {
             StockSyncWorker::class.java.name -> {
                 StockSyncWorker(
                     context = appContext,
                     params = workerParameters,
-                    repository = stockRepository,
+                    stockRepository = stockRepository,
+                    marketRepository = marketRepository,
                     logger = logger
                 )
             }
