@@ -25,7 +25,6 @@ val stockModule = module {
 
     single {
         Room.databaseBuilder(get(), StockDatabase::class.java, "stocks.db")
-            .fallbackToDestructiveMigration(true)  // Clear data on schema change (dev only)
             .build()
     }
 

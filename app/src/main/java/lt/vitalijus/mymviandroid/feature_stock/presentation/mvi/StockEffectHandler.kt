@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import lt.vitalijus.mymviandroid.core.analytics.AnalyticsTracker
 import lt.vitalijus.mymviandroid.core.log.LogCategory
@@ -56,48 +57,41 @@ class StockEffectHandler(
 
             is StockEffect.ToggleFavorite ->
                 flow<Unit> {
-                    favoritesRepository.toggleFavorite(id = effect.id)
+                    favoritesRepository.toggleFavorite(effect.id)
                 }.flatMapLatest { emptyFlow() }
 
             is StockEffect.TrackAnalytics ->
                 flow<Unit> {
-                    analytics.track(event = effect.event)
+                    analytics.track(effect.event)
                 }.flatMapLatest { emptyFlow() }
         }
 
-    /**
-     * Main observation flow:
-     * 1. Show loading
-     * 2. Fetch from API and cache to DB (initial load)
-     * 3. Observe DB changes + market state + animations
-     */
     private fun observeStocksFlow(): Flow<StockPartialState> = flow {
-        emit(StockPartialState.Loading)
-
-        // Step 1: Fetch from API and cache to DB
-        try {
-            stockRepository.refresh()
-            logger.d(
-                LogCategory.PARTIAL_STATE,
-                StockEffectHandler::class,
-                "✅ Initial data loaded from API"
-            )
-        } catch (e: Exception) {
-            logger.e(
-                LogCategory.PARTIAL_STATE,
-                StockEffectHandler::class,
-                "❌ Initial load failed: ${e.message}"
-            )
-        }
-
-        // Step 2: Track active animations (stockId -> isPriceUp)
-        val activeAnimations = MutableStateFlow<Map<String, Boolean>>(emptyMap())
-
         coroutineScope {
+            // Background: fetch from API to refresh data
+            launch {
+                try {
+                    stockRepository.refresh()
+                    logger.d(
+                        LogCategory.PARTIAL_STATE,
+                        StockEffectHandler::class,
+                        "✅ Background refresh completed"
+                    )
+                } catch (e: Exception) {
+                    logger.e(
+                        LogCategory.PARTIAL_STATE,
+                        StockEffectHandler::class,
+                        "❌ Background refresh failed: ${e.message}"
+                    )
+                }
+            }
+
+            // Track active animations: stockId -> isPriceUp (true=up, false=down)
+            val activeAnimations = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+
             // Collect price changes for animations
             launch {
                 priceChangeEventBus.events.collect { event ->
-                    // Start animation
                     activeAnimations.value += (event.stockId to event.isPriceUp)
                     // Clear after 1 second
                     launch {
@@ -107,7 +101,7 @@ class StockEffectHandler(
                 }
             }
 
-            // Combine DB + animations + market state
+            // Main flow: combine DB + animations + market state
             combine(
                 observeUseCase(),
                 activeAnimations,
@@ -127,10 +121,12 @@ class StockEffectHandler(
                     StockPartialState.DataLoaded(stocks = stocks),
                     StockPartialState.MarketStateChanged(isOpen = marketState == MarketState.OPEN)
                 )
-            }.collect { (dataLoaded, marketState) ->
-                emit(dataLoaded)
-                emit(marketState)
             }
+                .onStart { emit(StockPartialState.Loading) }
+                .collect { (dataLoaded, marketState) ->
+                    emit(dataLoaded)
+                    emit(marketState)
+                }
         }
     }.catch {
         emit(StockPartialState.Error(it.message ?: "Unknown error"))
